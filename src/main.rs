@@ -19,11 +19,13 @@ trait Transpose {
 trait Matrix {
     // must be numeric
     type Number;
-    fn dot(self, other: M<Self::Number>) -> M<Self::Number>;
+    fn dot2(self, other: M<Self::Number>) -> M<Self::Number>;
+    fn dot(self, other: Vec<Self::Number>) -> Vec<Self::Number>;
     fn add(self, other: M<Self::Number>) -> Self;
     fn sub(self, other: M<Self::Number>) -> Self;
     fn subs(self, value: Self::Number) -> Self;
     fn mul(self, value: Self::Number) -> Self;
+    fn mulm(self, other: M<Self::Number>) -> Self;
     fn sum(&self) -> Self::Number;
     fn m_eq(&self, other: &M<Self::Number>) -> Self;
 }
@@ -57,7 +59,7 @@ where
         + From<f32>,
 {
     type Number = T;
-    fn dot(self, other: M<Self::Number>) -> M<Self::Number> {
+    fn dot2(self, other: M<Self::Number>) -> M<Self::Number> {
         let t = other.transpose();
         self.clone().into_iter()
             .map(|x| {
@@ -72,9 +74,17 @@ where
             .collect::<M<T>>()
     }
 
+    fn dot(self, other: Vec<Self::Number>) -> Vec<Self::Number> {
+        self.into_iter()
+            .map(|x| {
+                        other.iter()
+                            .zip(x.iter())
+                            .fold(T::default(), |acc: T, (o, s): (&T, &T)| acc + *o * *s)
+            })
+            .collect::<Vec<T>>()
+    }
+
     fn add(self, other: M<Self::Number>) -> Self {
-        assert_eq!(self.len(), other.len());
-        assert_eq!(self[0].len(), other[0].len());
         self.into_iter()
             .zip(other)
             .map(|(l, r)| l.into_iter().zip(r).map(|(l, r)| l + r).collect::<Vec<T>>())
@@ -82,8 +92,6 @@ where
     }
 
     fn sub(self, other: M<Self::Number>) -> Self {
-        assert_eq!(self.len(), other.len());
-        assert_eq!(self[0].len(), other[0].len());
         self.into_iter()
             .zip(other)
             .map(|(l, r)| l.into_iter().zip(r).map(|(l, r)| l - r).collect::<Vec<T>>())
@@ -100,6 +108,10 @@ where
         self.into_iter()
             .map(|v| v.into_iter().map(|v| v * value).collect::<Vec<T>>())
             .collect::<M<T>>()
+    }
+
+    fn mulm(self, other: M<Self::Number>) -> Self {
+        self.iter().zip(other).map(|(l, r)| l.iter().zip(r).map(|(l, r)| *l * r).collect::<Vec<T>>()).collect::<M<T>>()
     }
 
     fn sum(&self) -> T {
@@ -164,11 +176,9 @@ fn softmax(x: M<f32>) -> M<f32> {
 }
 
 fn forward_prop(d: Layers, x: M<f32>) -> Layers {
-    println!("{:#?}", d.1);
-    let z1 = d.0.dot(x).add(d.1);
-    println!("done");
+    let z1 = d.0.dot2(x).add(d.1);
     let a1 = relu(z1.clone());
-    let z2 = d.2.dot(a1.clone()).add(d.3);
+    let z2 = d.2.dot2(a1.clone()).add(d.3);
     let a2 = softmax(z2.clone());
     (z1, a1, z2, a2)
 }
@@ -204,7 +214,7 @@ fn pred(a2: &M<f32>) -> Vec<f32> {
     // a2.iter_mut().enumerate().into_iter().sort_unstable_by(|(li, l), (ri, r)| if l.partial_cmp(&r) { (li, l) } else { (ri, r) });
     // vec![a2.first().unwrap().clone()]
     let a2len = a2.len();
-    let mut max = a2.clone().transpose()[0].clone().into_iter().enumerate().collect::<Vec<(usize, f32)>>();
+    let mut max = a2.clone()[0].clone().into_iter().enumerate().collect::<Vec<(usize, f32)>>();
     max.sort_unstable_by(|l, r| l.1.partial_cmp(&r.1).unwrap());
     vec![max.first().unwrap().0 as f32; a2len]
 }
@@ -254,20 +264,17 @@ fn back_prop(
 ) -> (M<f32>, f32, M<f32>, f32) {
     let rows = rows as f32;
     let one_hot_y = one_hot(y);
-    println!("{}", one_hot_y.len());
-    println!("{}", one_hot_y[0].len());
-    println!("{:#?}", a2);
     let dz2 = a2.sub(one_hot_y);
-    println!("2");
     let dw2 = dz2
         .iter()
         .map(|x| x.iter().map(|x| 1.0 / rows * x).collect::<Vec<f32>>())
         .collect::<M<f32>>()
-        .dot(a1.transpose());
+        .dot2(a1.transpose());
     let db2 = 1.0 / rows * dz2.sum();
     let dz1 = w2
         .transpose()
-        .dot(dz2.clone())
+        .dot2(dz2.clone())
+        .mulm(z1)
         .iter()
         .map(|x| {
             x.iter()
@@ -276,7 +283,7 @@ fn back_prop(
         })
         .collect::<M<f32>>();
     let dw1 = dz2
-        .dot(x.transpose())
+        .dot2(x.transpose())
         .iter()
         .map(|x| x.iter().map(|x| 1.0 / rows * x).collect::<Vec<f32>>())
         .collect::<M<f32>>();
@@ -286,13 +293,26 @@ fn back_prop(
 
 macro_rules! rand_shape {
     ($r:expr, $c:expr) => {
-        vec![
-            vec![0, $c]
-                .iter()
-                .map(|_| rand::thread_rng().gen_range(-0.5..=0.5))
-                .collect::<Vec<f32>>();
-            $r
-        ]
+        {
+            let mut data = Vec::with_capacity($r);
+            for _ in 0..$r {
+                let mut row = Vec::with_capacity($c);
+                for _ in 0..$c {
+                    row.push(fastrand::f32() - 0.5)
+                }
+                data.push(row);
+            }
+            data
+            // vec![
+            //     vec![0, $c]
+            //         .iter()
+            //         .map(|_| {
+            //             fastrand::f32() - 0.5
+            //         })
+            //         .collect::<Vec<f32>>();
+            //     $r
+            // ]
+        }
     };
 }
 
@@ -308,7 +328,8 @@ fn init_params() -> Layers {
 
 fn main() -> Result<(), Box<dyn Error>> {
     println!("Hello, world!");
-    let mut data = read_csv("train.csv")?[1..].to_vec();
+    println!("{:#?}", vec![vec![1.0, 2.0], vec![3.0, 4.0]].dot(vec![2.0, 2.0]));
+    let mut data = read_csv("train.csv")?.to_vec();
     let rows_len = data.len();
     let cols_len = data[0].len();
     data.shuffle(&mut thread_rng());
