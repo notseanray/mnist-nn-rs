@@ -61,9 +61,11 @@ where
     type Number = T;
     fn dot2(&self, other: M<Self::Number>) -> M<Self::Number> {
         let t = other.transpose();
-        self.clone().into_iter()
+        self.clone()
+            .into_iter()
             .map(|x| {
-                t.iter().zip(self[0].iter())
+                t.iter()
+                    .zip(self[0].iter())
                     .map(|(y, _)| {
                         y.iter()
                             .zip(&x)
@@ -77,9 +79,10 @@ where
     fn dot(self, other: Vec<Self::Number>) -> Vec<Self::Number> {
         self.into_iter()
             .map(|x| {
-                        other.iter()
-                            .zip(x.iter())
-                            .fold(T::default(), |acc: T, (o, s): (&T, &T)| acc + *o * *s)
+                other
+                    .iter()
+                    .zip(x.iter())
+                    .fold(T::default(), |acc: T, (o, s): (&T, &T)| acc + *o * *s)
             })
             .collect::<Vec<T>>()
     }
@@ -111,7 +114,10 @@ where
     }
 
     fn mulm(self, other: M<Self::Number>) -> Self {
-        self.iter().zip(other).map(|(l, r)| l.iter().zip(r).map(|(l, r)| *l * r).collect::<Vec<T>>()).collect::<M<T>>()
+        self.iter()
+            .zip(other)
+            .map(|(l, r)| l.iter().zip(r).map(|(l, r)| *l * r).collect::<Vec<T>>())
+            .collect::<M<T>>()
     }
 
     fn sum(&self) -> T {
@@ -185,9 +191,9 @@ fn forward_prop(d: Layers, x: M<f32>) -> Layers {
 
 fn one_hot(y: Vec<f32>) -> M<f32> {
     let max = y.iter().fold(0.0, |a: f32, &b| a.max(b));
-        // .collect::<Vec<f32>>()
-        // .iter()
-        // .fold(0.0, |a: f32, &b| a.max(b));
+    // .collect::<Vec<f32>>()
+    // .iter()
+    // .fold(0.0, |a: f32, &b| a.max(b));
     // let size = y.iter().map(|x| x.len()).sum();
     let size = y.len();
     let mut one_hot_y = vec![vec![0.0; 10]; max as usize + 1];
@@ -214,7 +220,11 @@ fn pred(a2: &M<f32>) -> Vec<f32> {
     // a2.iter_mut().enumerate().into_iter().sort_unstable_by(|(li, l), (ri, r)| if l.partial_cmp(&r) { (li, l) } else { (ri, r) });
     // vec![a2.first().unwrap().clone()]
     let a2len = a2.len();
-    let mut max = a2.clone()[0].clone().into_iter().enumerate().collect::<Vec<(usize, f32)>>();
+    let mut max = a2.clone()[0]
+        .clone()
+        .into_iter()
+        .enumerate()
+        .collect::<Vec<(usize, f32)>>();
     max.sort_unstable_by(|l, r| l.1.partial_cmp(&r.1).unwrap());
     vec![max.first().unwrap().0 as f32; a2len]
 }
@@ -222,7 +232,12 @@ fn pred(a2: &M<f32>) -> Vec<f32> {
 fn get_accuracy(predictions: Vec<f32>, y: &Vec<f32>) -> f32 {
     // let size: f32 = y.iter().map(|x| x.len() as f32).sum();
     println!("{:#?} {:#?}", &predictions[0..4], &y[0..4]);
-    predictions.iter().zip(&y.to_vec()).map(|(l, r)| if l == r { 1.0 } else {0.0 }).fold(0.0, |acc, curr| acc + curr) / y.len() as f32
+    predictions
+        .iter()
+        .zip(&y.to_vec())
+        .map(|(l, r)| if l == r { 1.0 } else { 0.0 })
+        .fold(0.0, |acc, curr| acc + curr)
+        / y.len() as f32
 }
 
 fn gradient_descent(x: M<f32>, y: Vec<f32>, alpha: f32, iterations: usize, rows: usize) -> Layers {
@@ -292,28 +307,24 @@ fn back_prop(
 }
 
 macro_rules! rand_shape {
-    ($r:expr, $c:expr) => {
-        {
-            // let mut data = Vec::with_capacity($r);
-            // for _ in 0..$r {
-            //     let mut row = Vec::with_capacity($c);
-            //     for _ in 0..$c {
-            //         row.push(fastrand::f32() - 0.5)
-            //     }
-            //     data.push(row);
-            // }
-            // data
-            vec![
-                vec![0, $c]
-                    .iter()
-                    .map(|_| {
-                        fastrand::f32() - 0.5
-                    })
-                    .collect::<Vec<f32>>();
-                $r
-            ]
-        }
-    };
+    ($r:expr, $c:expr) => {{
+        // let mut data = Vec::with_capacity($r);
+        // for _ in 0..$r {
+        //     let mut row = Vec::with_capacity($c);
+        //     for _ in 0..$c {
+        //         row.push(fastrand::f32() - 0.5)
+        //     }
+        //     data.push(row);
+        // }
+        // data
+        vec![
+            vec![0, $c]
+                .iter()
+                .map(|_| { fastrand::f32() - 0.5 })
+                .collect::<Vec<f32>>();
+            $r
+        ]
+    }};
 }
 
 type Layers = (M<f32>, M<f32>, M<f32>, M<f32>);
