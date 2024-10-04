@@ -19,10 +19,10 @@ trait Transpose {
 trait Matrix {
     // must be numeric
     type Number;
-    fn dot2(self, other: M<Self::Number>) -> M<Self::Number>;
+    fn dot2(&self, other: M<Self::Number>) -> M<Self::Number>;
     fn dot(self, other: Vec<Self::Number>) -> Vec<Self::Number>;
     fn add(self, other: M<Self::Number>) -> Self;
-    fn sub(self, other: M<Self::Number>) -> Self;
+    fn sub(&self, other: M<Self::Number>) -> Self;
     fn subs(self, value: Self::Number) -> Self;
     fn mul(self, value: Self::Number) -> Self;
     fn mulm(self, other: M<Self::Number>) -> Self;
@@ -59,7 +59,7 @@ where
         + From<f32>,
 {
     type Number = T;
-    fn dot2(self, other: M<Self::Number>) -> M<Self::Number> {
+    fn dot2(&self, other: M<Self::Number>) -> M<Self::Number> {
         let t = other.transpose();
         self.clone().into_iter()
             .map(|x| {
@@ -91,10 +91,10 @@ where
             .collect::<M<T>>()
     }
 
-    fn sub(self, other: M<Self::Number>) -> Self {
-        self.into_iter()
+    fn sub(&self, other: M<Self::Number>) -> Self {
+        self.iter()
             .zip(other)
-            .map(|(l, r)| l.into_iter().zip(r).map(|(l, r)| l - r).collect::<Vec<T>>())
+            .map(|(l, r)| l.iter().zip(r).map(|(l, r)| *l - r).collect::<Vec<T>>())
             .collect::<M<T>>()
     }
 
@@ -141,15 +141,15 @@ where
     }
 }
 
-fn relu<T: Default + PartialOrd>(z: M<T>) -> M<T>
+fn relu<T: Default + PartialOrd + Copy>(z: &M<T>) -> M<T>
 where
     Vec<T>: FromIterator<f32>,
     f32: From<T>,
 {
-    z.into_iter()
+    z.iter()
         .map(|x| {
-            x.into_iter()
-                .map(|x| f32::max(x.into(), T::default().into()))
+            x.iter()
+                .map(|x| f32::max((*x).into(), T::default().into()))
                 .collect::<Vec<T>>()
         })
         .collect::<M<T>>()
@@ -164,22 +164,22 @@ fn read_csv<P: AsRef<Path>>(path: P) -> Result<M<String>, std::io::Error> {
         .collect::<M<String>>())
 }
 
-fn softmax(x: M<f32>) -> M<f32> {
+fn softmax(x: &M<f32>) -> M<f32> {
     let exp = x
         .iter()
         .map(|x| x.iter().map(|x| E.powf(*x)).collect::<Vec<f32>>())
         .collect::<M<f32>>();
     let sum: f32 = exp.iter().map(|x| x.iter().sum::<f32>()).sum();
-    x.into_iter()
-        .map(|x| x.into_iter().map(|x| x / sum).collect::<Vec<f32>>())
+    exp.iter()
+        .map(|x| x.iter().map(|x| x / sum).collect::<Vec<f32>>())
         .collect::<M<f32>>()
 }
 
 fn forward_prop(d: Layers, x: M<f32>) -> Layers {
     let z1 = d.0.dot2(x).add(d.1);
-    let a1 = relu(z1.clone());
+    let a1 = relu(&z1);
     let z2 = d.2.dot2(a1.clone()).add(d.3);
-    let a2 = softmax(z2.clone());
+    let a2 = softmax(&z2);
     (z1, a1, z2, a2)
 }
 
@@ -233,7 +233,7 @@ fn gradient_descent(x: M<f32>, y: Vec<f32>, alpha: f32, iterations: usize, rows:
             z1,
             a1,
             z2,
-            a2.clone(),
+            &a2,
             p.0.clone(),
             p.2.clone(),
             x.clone(),
@@ -243,7 +243,7 @@ fn gradient_descent(x: M<f32>, y: Vec<f32>, alpha: f32, iterations: usize, rows:
         p = update_params(p, dw1, db1, dw2, db2, alpha);
         if i % 10 == 0 {
             println!("Iteration: {i}");
-            println!("{:#?}", a2);
+            //println!("{:#?}", a2);
             let predictions = pred(&a2);
             println!("accuracy {}", get_accuracy(predictions, &y));
         }
@@ -255,7 +255,7 @@ fn back_prop(
     z1: M<f32>,
     a1: M<f32>,
     z2: M<f32>,
-    a2: M<f32>,
+    a2: &M<f32>,
     w1: M<f32>,
     w2: M<f32>,
     x: M<f32>,
@@ -294,24 +294,24 @@ fn back_prop(
 macro_rules! rand_shape {
     ($r:expr, $c:expr) => {
         {
-            let mut data = Vec::with_capacity($r);
-            for _ in 0..$r {
-                let mut row = Vec::with_capacity($c);
-                for _ in 0..$c {
-                    row.push(fastrand::f32() - 0.5)
-                }
-                data.push(row);
-            }
-            data
-            // vec![
-            //     vec![0, $c]
-            //         .iter()
-            //         .map(|_| {
-            //             fastrand::f32() - 0.5
-            //         })
-            //         .collect::<Vec<f32>>();
-            //     $r
-            // ]
+            // let mut data = Vec::with_capacity($r);
+            // for _ in 0..$r {
+            //     let mut row = Vec::with_capacity($c);
+            //     for _ in 0..$c {
+            //         row.push(fastrand::f32() - 0.5)
+            //     }
+            //     data.push(row);
+            // }
+            // data
+            vec![
+                vec![0, $c]
+                    .iter()
+                    .map(|_| {
+                        fastrand::f32() - 0.5
+                    })
+                    .collect::<Vec<f32>>();
+                $r
+            ]
         }
     };
 }
@@ -327,12 +327,12 @@ fn init_params() -> Layers {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    println!("Hello, world!");
-    println!("{:#?}", vec![vec![1.0, 2.0], vec![3.0, 4.0]].dot(vec![2.0, 2.0]));
-    let mut data = read_csv("train.csv")?.to_vec();
+    println!("reading training data");
+    let data = read_csv("train.csv")?.to_vec();
     let rows_len = data.len();
-    let cols_len = data[0].len();
-    data.shuffle(&mut thread_rng());
+    println!("shuffling data");
+    //data.shuffle(&mut thread_rng());
+    println!("done shuffling data");
     let dev_data = &data[0..1000].to_vec().transpose();
     let y_dev = &dev_data[0];
     let x_dev = &dev_data[1..].to_vec();
